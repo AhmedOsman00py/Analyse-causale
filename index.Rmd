@@ -1,0 +1,312 @@
+---
+title: "ADD2 - DM Causalité"
+author: "OSMAN Ahmed & OUOROU Rachidou"
+date:
+output: 
+  html_document:
+    toc : true
+    toc_float : true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dagitty)
+```
+
+## Exercice 1
+
+```{r echo=FALSE}
+d <- dagitty(
+  'dag{
+    X [pos = "0, 0"]
+    U [pos = "0, -1"]
+    Z1 [pos = "1, -1.5"]
+    Z2 [pos = "1, -0.5"]
+    Z3 [pos = "2, -1"]
+    Y [pos = "2, 0"]
+    Z1 -> U -> Z2
+    Z1 -> U -> X -> Y
+    Z1 -> Z3 -> Z2
+    Z1 -> Z3 -> Y
+    X -> Y
+  }'
+)
+
+plot(d)
+```
+
+### question 1
+
+Liste de tous les chemins entre X et Y :
+
+- X -> Y : chemin **ouvert**
+
+- X <- U -> Z2 <- Z3 -> Y : chemin **fermé**
+
+- X <- U <- Z1 -> Z3 -> Y : chemin **ouvert**
+
+Les chemins ouverts entre X et Y sont donc :
+
+**X -> Y**    et    **X <- U <- Z1 -> Z3 -> Y**
+
+```{r}
+paths(d, from = "X", to = "Y")
+```
+
+### question 2
+
+Il faut bloquer **X <- U <- Z1 -> Z3 -> Y**
+
+En bloquant ce chemin, toutes les confusions ont été supprimées car il n'y a pas de chemin backdoor ouverts entre X et Y.
+
+### question 3
+
+Non, car on a X -> Y qui est un chemin frontdoor et donc un chemin causal, mais ce n'est pas le seul, on voudrait donc le rendre unique (frontdoor et ouvert).
+
+Il faut conditionner sur **Z3** ou **Z1** pour bloqué le chemin frontdoor **Z1 -> Z3 -> Y**.
+
+```{r}
+latents(d) = "U"
+adjustmentSets(d, exposure = "X", outcome = "Y")
+```
+
+
+### question 4
+
+On bloque les chemins Backddor :
+
+**X <- U -> Z2 <- Z3 -> Y** est un chemin Backdoor fermé, donc on conditionnant sur U ou Z3 le chemin reste fermé à cause de Z2.
+
+**X <- U <- Z1 -> Z3 -> Y** est un chemin Backdoor ouvert, donc on conditionnant sur U ou Z3 ou Z1 le chemin sera fermé.
+
+Ainsi les ensembles d'ajustement sont {Z3}, {Z1}, {U}.
+
+```{r}
+# Vérification
+d <- dagitty(
+  'dag{
+    X [pos = "0, 0"]
+    U [pos = "0, -1"]
+    Z1 [pos = "1, -1.5"]
+    Z2 [pos = "1, -0.5"]
+    Z3 [pos = "2, -1"]
+    Y [pos = "2, 0"]
+    Z1 -> U -> Z2
+    Z1 -> U -> X -> Y
+    Z1 -> Z3 -> Z2
+    Z1 -> Z3 -> Y
+    X -> Y
+  }'
+)
+
+adjustmentSets(d, exposure = "X", outcome = "Y")
+```
+
+## Exercice 2 
+
+### question 1
+
+```{r}
+set.seed(42)
+
+n <- 1000
+
+# Epsilon
+epsU <- rnorm(n, 0, sqrt(0.5))
+epsX <- rnorm(n, 0, sqrt(0.5))
+epsR <- rnorm(n, 0, sqrt(0.5))
+epsV <- rnorm(n, 0, sqrt(0.5))
+epsZ <- rnorm(n, 0, sqrt(0.5))
+epsW <- rnorm(n, 0, sqrt(0.5))
+epsY <- rnorm(n, 0, sqrt(0.5))
+
+U <- 1 + epsU
+X <- U + epsX
+
+R <- 2 + epsR
+V <- U + R + epsV
+
+Z <- X + epsZ
+W <- Z + 2*X + epsW
+Y <- 2*V + W + R + epsY
+```
+
+### question 2
+
+Oui, X a un effet causal sur Y, car les chemins de X vers Y sont causals (chemins front-door ouvert)
+
+### question 3
+
+```{r echo=FALSE}
+d <- dagitty(
+  'dag{
+    X [pos = "0, 0"]
+    U [pos = "0, -1"]
+    Z [pos = "1, 0.5"]
+    W [pos = "1, 0"]
+    V [pos = "1, -1"]
+    Y [pos = "2, 0"]
+    R [pos = "2, -1"]
+    U -> X -> W -> Y
+    U -> X -> Z -> W -> Y
+    U -> V -> Y
+    R -> V
+    R -> Y
+  }'
+)
+
+plot(d)
+```
+
+En introduisant l'opérateur **do(X=x)**, le schéma devient :
+
+```{r echo=FALSE}
+d.do <- dagitty(
+  'dag{
+    X [pos = "0, 0"]
+    U [pos = "0, -1"]
+    Z [pos = "1, 0.5"]
+    W [pos = "1, 0"]
+    V [pos = "1, -1"]
+    Y [pos = "2, 0"]
+    R [pos = "2, -1"]
+    X -> W -> Y
+    X -> Z -> W -> Y
+    U -> V -> Y
+    R -> V
+    R -> Y
+  }'
+)
+
+plot(d.do)
+```
+
+L'expression de la loi de probabilité jointe est donc :
+
+$$
+\mathbb{F}(U=u, R=r, V=v, Z=z, W=w, Y=y|\ do(X=x))=\\F(R=r). F(U=u).F(V=v | R=r, U=u)\\.F(W=w | X=x, Z=z).F(Z=z|X=x).F(Y=y|R=r, V=v, W=w)
+$$
+
+### question 4
+
+$$
+\mathbb{F}(Y=y|\ do(X=x))= \int_{u}\int_{v}\int_{r}\int_{w}\int_{z} F(R=r). F(V=v).F(V=v | R=r, U=u)\\.F(W=w | X=x, Z=z).F(Z=z|X=x).F(Y=y|R=r, V=v, W=w)\ \mathrm{d}u \ \mathrm{d}v \ \mathrm{d}r\ \mathrm{d}w \ \mathrm{d}z
+$$
+
+### question 5
+
+```{r}
+do.x_0 = rep(0, 1000)
+do.x_1 = rep(1, 1000)
+
+Z0 = do.x_0 + epsZ
+W0 = Z0 + 2*do.x_0 + epsW
+Y_do_0 = 2*V + W0 + R + epsY
+
+
+Z1 = do.x_1 + epsZ
+W1 = Z1 + 2*do.x_1 + epsW
+Y_do_1 = 2*V + W1 + R + epsY
+```
+
+
+### question 6
+
+```{r}
+mean(Y_do_1 - Y_do_0)
+```
+
+
+### question 7
+
+```{r}
+adjustmentSets(d, exposure = "X", outcome = "Y")
+```
+
+On bloque les chemins Backddor :
+
+**X <- U -> V <- R -> Y** est un chemin Backdoor fermé, donc on conditionnant sur V on l'ouvre et en reconditionnant sur R on le ferme. 
+On pouvait aussi conditionner que sur U et le chemin restera fermé.
+Ainsi l'ensemble d'ajustement est {R, V} et {U}.
+
+Pareil pour **X <- U -> V -> Y**
+
+### question 8
+
+Lorsque {U} est l'ensemble d'ajustement :
+
+$$
+\mathbb{F}(Y=y|\ do(X=x))=\int_{u} F(U=u).F(Y=y|R=r, V=v, W=w)\ \mathrm{d}u
+$$
+
+Lorsque {V, R} est l'ensemble d'ajustement :
+
+$$
+\mathbb{F}(Y=y|\ do(X=x))=\int_{v}\int_{r}\ F(R=r, V=v).F(Y=y|R=r, V=v, X=x)\ \mathrm{d}v \ \mathrm{d}r\ 
+$$
+
+### question 9
+
+```{r}
+lm(Y~X)
+
+mean(Y_do_1 - Y_do_0)
+```
+
+En faisant un régression de Y en fonction de X seulement on trouve que le coefficient de X est proche de 4 qui est différent de 3 (l'effet causale moyen trouvé à la question 6), ce qui n'est pas la vrai valeur de l'effet causale (effet causale biaisée).
+
+```{r}
+lm(Y~X+U)
+
+lm(Y~X+V+R)
+```
+
+On trouve que les valeur des coefficients de X sont proche de 3 (l'effet causale moyen de la question 6), donc cela implique que {V, R} et {U} sont bien des ensembles d'ajustements qui va permettre d'identifier l'effet causale de X -> Y.
+
+## Exercice 3
+
+1- La relation d’indépendance (1) suit du fait que les chemins du type Z -> A -> W et Z -> Y -> W sont bloqués par A. Donc Z et indépendant de W en conditionnant par A.
+
+2- Y est indépendant de A en conditionnant sur (W, Z) ou encore en conditionnant sur (W, Z) on bloque les chemins suivant :
+
+ - **A -> W -> Y**
+ 
+ - **A <- Z -> Y**
+ 
+ 3- l'égalité (3) s'obtient du fait que :
+ 
+ $$
+ \text{loi jointe : } \ \ P(Y, A, Z, W) = P(Z).P(A|Z).P(W|A).P(Y|W,Z) \\
+  \text{application de l'opérateur do() : } \mathbb{P}(Y, Z, W|do(A=a)) = P(Z).P(W|A=a).P(Y|W,Z) \\
+\text{En passant par les probas totales : } \mathbb{P}(Y|do(A=a)) = \sum_{z,w} P(Z).P(W|A=a).P(Y|W,Z)
+ $$
+
+4- l'égalité (4) s'obtient du fait que :
+
+$$
+\sum_{z} P(Z=z).P(W=w|A=a).P(Y=y|W=w,Z=z) \\
+\text{En appliquant les probas totales on obtient : } \ \ \sum_{z, a'} P(z, a').P(y|z,w)
+$$
+
+5- l'égalité (5) s'obtient du fait que : en appliquant les probas conditionnelles on a, 
+
+$$
+\sum_{z, a'} P(a').P(z|a').P(y|z, w)
+$$
+6- l'égalité (6) s'obtient du fait que : en appliquant l'ignorabilité conditionnelles on a, 
+
+$$
+\sum_{z, a'} P(a').P(z|a', w).P(y|a', z, w)
+$$
+
+7- l'égalité (7) s'obtient du fait que : en appliquant l'inverse des probas conditionnelles on a, 
+
+$$
+\sum_{z, a'} P(a').P(z, y|a', w)
+$$
+8 - l'égalité (8) s'obtient du fait que : en appliquant l'inverse des probas conditionnelles on a, 
+
+$$
+\sum_{a'} P(a').P(y|a', w) = \sum_{a'} P(y,a'|w)
+$$
+
